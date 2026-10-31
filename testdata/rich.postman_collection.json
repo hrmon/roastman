@@ -1,0 +1,335 @@
+{
+  "info": {
+    "_postman_id": "11111111-2222-3333-4444-555555555555",
+    "name": "Rich/API: v1",
+    "description": "A rich collection",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "42"
+  },
+  "item": [
+    {
+      "name": "Folder: One",
+      "description": "folder description",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "console.log('folder pre')"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "auth": {
+        "type": "noauth"
+      },
+      "variable": [
+        {
+          "key": "fvar",
+          "value": "fvalue",
+          "description": "folder var",
+          "type": "string"
+        }
+      ],
+      "item": [
+        {
+          "name": "Req/One",
+          "id": "req-id-1",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "var a = 1;",
+                  "var b = 2;"
+                ],
+                "type": "text/javascript",
+                "packages": {}
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('ok', () => {});"
+                ],
+                "type": "text/javascript",
+                "packages": {
+                  "p": "1"
+                }
+              }
+            }
+          ],
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          },
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                },
+                {
+                  "key": "prefix",
+                  "value": "Bearer"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Off",
+                "value": "yes",
+                "disabled": true,
+                "description": "off"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"a\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "request description",
+            "url": {
+              "raw": "https://api.example.com:8443/v1/items/:id?q=hello&off=1#frag",
+              "protocol": "https",
+              "host": [
+                "api",
+                "example",
+                "com"
+              ],
+              "port": "8443",
+              "path": [
+                "v1",
+                "items",
+                ":id"
+              ],
+              "hash": "frag",
+              "query": [
+                {
+                  "key": "q",
+                  "value": "hello",
+                  "type": "text"
+                },
+                {
+                  "key": "off",
+                  "value": "1",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "42",
+                  "description": "thing id"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "id": "resp-1",
+              "name": "OK/response",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://api.example.com/v1/items/42",
+                  "protocol": "https",
+                  "host": [
+                    "api",
+                    "example",
+                    "com"
+                  ],
+                  "path": [
+                    "v1",
+                    "items",
+                    "42"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [
+                {
+                  "name": "sid",
+                  "value": "abc"
+                }
+              ],
+              "body": "{\"ok\":true}",
+              "responseTime": 12,
+              "timings": {
+                "send": 1,
+                "wait": 10,
+                "receive": 1
+              }
+            }
+          ]
+        },
+        {
+          "name": "Form Request",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "value": null
+                },
+                {
+                  "key": "file2",
+                  "type": "file",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "text",
+                  "value": "hello",
+                  "type": "text",
+                  "uuid": "u-1"
+                },
+                {
+                  "key": "srcfile",
+                  "type": "file",
+                  "src": "a/b.txt",
+                  "contentType": "text/plain",
+                  "description": "a file"
+                }
+              ]
+            },
+            "url": "{{base_url}}/form"
+          },
+          "response": []
+        },
+        {
+          "name": "Encoded Request",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "a",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "b",
+                  "value": "2"
+                }
+              ]
+            },
+            "url": "{{base_url}}/encoded"
+          }
+        },
+        {
+          "name": "GraphQL Request",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query { hello }",
+                "variables": "{\"a\":1}",
+                "operationName": "Op"
+              }
+            },
+            "url": "{{base_url}}/graphql"
+          }
+        },
+        {
+          "name": "File Request",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "file",
+              "file": {
+                "src": "data/file.bin"
+              }
+            },
+            "url": "{{base_url}}/file"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Top Request",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": "{{base_url}}/top"
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://example.com"
+    },
+    {
+      "key": "typed",
+      "value": "x",
+      "type": "string",
+      "description": "typed var"
+    }
+  ],
+  "auth": {
+    "type": "noauth"
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "exec": [
+          "// collection test"
+        ],
+        "type": "text/javascript"
+      }
+    }
+  ]
+}
