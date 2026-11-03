@@ -144,11 +144,14 @@ used. The older `--folder`/`--request` flags are filters in collection order.
 
 The CLI report is tree/table oriented like Newman. When writing the CLI report
 to stdout, results stream as each request completes, and failed tests are repeated in a
-final `Failures:` recap after the summary table. `--verbose` adds test details
-and console output; `--quiet` suppresses the per-request stream.
-`--report-bodies` additionally includes the final request and response headers
-and bodies for every request (it also enables full per-request output). Bodies
-can contain secrets, so use it deliberately.
+final `Failures:` recap after the summary table. Colors are enabled when stdout is
+a terminal. Set `NO_COLOR` (or `TERM=dumb`) to disable them. Requests with the
+same name in the same folder are disambiguated with an `(occurrence/total)`
+suffix, such as `Login (2/3)`, in CLI, JSON (`displayName`), and JUnit output.
+`--verbose` adds test details and console output; `--quiet` suppresses the
+per-request stream. `--report-bodies` additionally includes the final request
+and response headers and bodies for every request (it also enables full
+per-request output). Bodies can contain secrets, so use it deliberately.
 
 Unresolved variables are warnings, not errors. If a URL still contains
 `{{variable}}` after pre-request scripts, that request is skipped with a warning.

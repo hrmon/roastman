@@ -284,7 +284,7 @@ func runCollection(args []string) error {
 			if liveCLI && printer != nil {
 				printer.Summary(report)
 			} else {
-				report.WriteCLI(os.Stdout, *verbose && !*quiet, true, *reportBodies)
+				report.WriteCLI(os.Stdout, *verbose && !*quiet, !runner.ColorSupported(os.Stdout), *reportBodies)
 			}
 		}
 		if err != nil {

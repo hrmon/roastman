@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -30,7 +31,9 @@ type Report struct {
 // ItemReport is the result of one request.
 type ItemReport struct {
 	Iteration       int                 `json:"iteration"`
+	ID              string              `json:"id,omitempty"`
 	Name            string              `json:"name"`
+	DisplayName     string              `json:"displayName,omitempty"`
 	Folder          string              `json:"folder,omitempty"`
 	Method          string              `json:"method,omitempty"`
 	URL             string              `json:"url,omitempty"`
@@ -61,14 +64,73 @@ func (r *Report) WriteJSON(w io.Writer) error {
 	return enc.Encode(r)
 }
 
+// styles renders ANSI escape sequences when enabled. Styling is applied to
+// complete text fragments, so callers can keep using plain strings for width
+// calculations.
+type styles struct{ enabled bool }
+
+func newStyles(enabled bool) styles { return styles{enabled: enabled} }
+
+func (s styles) paint(code, text string) string {
+	if !s.enabled || text == "" {
+		return text
+	}
+	return "\x1b[" + code + "m" + text + "\x1b[0m"
+}
+
+func (s styles) bold(text string) string    { return s.paint("1", text) }
+func (s styles) dim(text string) string     { return s.paint("2", text) }
+func (s styles) red(text string) string     { return s.paint("31", text) }
+func (s styles) green(text string) string   { return s.paint("32", text) }
+func (s styles) yellow(text string) string  { return s.paint("33", text) }
+func (s styles) cyan(text string) string    { return s.paint("36", text) }
+func (s styles) boldRed(text string) string { return s.paint("1;31", text) }
+
+func (s styles) statusCode(code int) string {
+	if code == 0 {
+		return ""
+	}
+	text := fmt.Sprintf(" %d", code)
+	switch {
+	case code >= 200 && code < 300:
+		return s.green(text)
+	case code >= 300 && code < 400:
+		return s.cyan(text)
+	case code >= 400:
+		return s.red(text)
+	default:
+		return text
+	}
+}
+
+// ColorSupported reports whether ANSI colors should be used for w. It is
+// disabled when NO_COLOR is set, TERM is "dumb", or w is not a terminal.
+func ColorSupported(w io.Writer) bool {
+	if _, ok := os.LookupEnv("NO_COLOR"); ok {
+		return false
+	}
+	if strings.EqualFold(os.Getenv("TERM"), "dumb") {
+		return false
+	}
+	f, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
+}
+
 // WriteCLI writes a human-readable Newman-inspired summary.
 func (r *Report) WriteCLI(w io.Writer, verbose, noColor bool, showBodies ...bool) {
-	_ = noColor
+	st := newStyles(!noColor)
 	bodies := len(showBodies) > 0 && showBodies[0]
 	showAll := verbose || bodies
-	fmt.Fprintf(w, "\n%s\n", r.Collection)
+	fmt.Fprintf(w, "\n%s\n", st.bold(r.Collection))
 	if r.Environment != "" {
-		fmt.Fprintf(w, "Environment: %s\n", r.Environment)
+		fmt.Fprintf(w, "%s %s\n", st.dim("Environment:"), st.cyan(r.Environment))
 	}
 
 	type group struct {
@@ -95,14 +157,14 @@ func (r *Report) WriteCLI(w io.Writer, verbose, noColor bool, showBodies ...bool
 	}
 	for _, g := range groups {
 		if g.folder != "" {
-			fmt.Fprintln(w, strings.ReplaceAll(g.folder, "/", " › "))
+			fmt.Fprintln(w, st.bold(strings.ReplaceAll(g.folder, "/", " › ")))
 		}
 		for _, item := range g.items {
-			writeItem(w, item, showAll, bodies)
+			writeItem(w, item, showAll, bodies, st)
 		}
 	}
 
-	writeReportSummary(w, r, false)
+	writeReportSummary(w, r, false, st)
 
 }
 
@@ -111,45 +173,52 @@ type CLIPrinter struct {
 	W          io.Writer
 	Verbose    bool
 	Bodies     bool
+	Color      bool
 	lastFolder string
 	started    bool
 }
 
 // NewCLIPrinter returns a live CLI printer.
 func NewCLIPrinter(w io.Writer, verbose, bodies bool) *CLIPrinter {
-	return &CLIPrinter{W: w, Verbose: verbose, Bodies: bodies}
+	return &CLIPrinter{W: w, Verbose: verbose, Bodies: bodies, Color: ColorSupported(w)}
 }
+
+func (p *CLIPrinter) styles() styles { return newStyles(p.Color) }
 
 // Header prints the collection and environment heading.
 func (p *CLIPrinter) Header(collection, environment string) {
-	fmt.Fprintf(p.W, "\n%s\n", collection)
+	st := p.styles()
+	fmt.Fprintf(p.W, "\n%s\n", st.bold(collection))
 	if environment != "" {
-		fmt.Fprintf(p.W, "Environment: %s\n", environment)
+		fmt.Fprintf(p.W, "%s %s\n", st.dim("Environment:"), st.cyan(environment))
 	}
 }
 
 // Item prints one completed request immediately.
 func (p *CLIPrinter) Item(item ItemReport) {
+	st := p.styles()
 	if item.Folder != p.lastFolder {
 		if p.started && item.Folder != "" {
 			fmt.Fprintln(p.W)
 		}
 		if item.Folder != "" {
-			fmt.Fprintln(p.W, strings.ReplaceAll(item.Folder, "/", " › "))
+			fmt.Fprintln(p.W, st.bold(strings.ReplaceAll(item.Folder, "/", " › ")))
 		}
 		p.lastFolder = item.Folder
 		p.started = true
 	}
-	writeItem(p.W, item, p.Verbose || p.Bodies, p.Bodies)
+	writeItem(p.W, item, p.Verbose || p.Bodies, p.Bodies, st)
 }
 
 // Summary prints the run summary table and totals.
-func (p *CLIPrinter) Summary(r *Report) { writeReportSummary(p.W, r, true) }
+func (p *CLIPrinter) Summary(r *Report) { writeReportSummary(p.W, r, true, p.styles()) }
 
 // WriteCLISummary writes only the final summary.
-func (r *Report) WriteCLISummary(w io.Writer) { writeReportSummary(w, r, true) }
+func (r *Report) WriteCLISummary(w io.Writer) {
+	writeReportSummary(w, r, true, newStyles(ColorSupported(w)))
+}
 
-func writeReportSummary(w io.Writer, r *Report, includeFailures bool) {
+func writeReportSummary(w io.Writer, r *Report, includeFailures bool, st styles) {
 	failedRequests := 0
 	var responseTimes []int64
 	var dataReceived int64
@@ -171,10 +240,10 @@ func writeReportSummary(w io.Writer, r *Report, includeFailures bool) {
 		{"errors", fmt.Sprintf("%d", r.Errors), ""},
 	}
 	fmt.Fprintln(w)
-	writeReportTable(w, rows)
-	fmt.Fprintf(w, "total run duration: %s\n", humanDuration(r.DurationMS))
+	writeReportTable(w, rows, st)
+	fmt.Fprintf(w, "%s %s\n", st.dim("total run duration:"), humanDuration(r.DurationMS))
 	if dataReceived > 0 {
-		fmt.Fprintf(w, "total data received: %s (approx)\n", humanBytes(dataReceived))
+		fmt.Fprintf(w, "%s %s (approx)\n", st.dim("total data received:"), humanBytes(dataReceived))
 	}
 	if len(responseTimes) > 0 {
 		min, max, sum := responseTimes[0], responseTimes[0], int64(0)
@@ -187,22 +256,22 @@ func writeReportSummary(w io.Writer, r *Report, includeFailures bool) {
 			}
 			sum += t
 		}
-		fmt.Fprintf(w, "average response time: %s (min: %s, max: %s)\n",
+		fmt.Fprintf(w, "%s %s (min: %s, max: %s)\n", st.dim("average response time:"),
 			humanMilliseconds(sum/int64(len(responseTimes))), humanMilliseconds(min), humanMilliseconds(max))
 	}
 	if includeFailures {
-		writeFailureRecap(w, r)
+		writeFailureRecap(w, r, st)
 	}
 	if r.Failed() {
-		fmt.Fprintf(w, "\n%d problem(s) found.\n", r.Failures+r.Errors)
+		fmt.Fprintf(w, "\n%s\n", st.boldRed(fmt.Sprintf("%d problem(s) found.", r.Failures+r.Errors)))
 	} else if r.Warnings > 0 || r.Skipped > 0 {
-		fmt.Fprintf(w, "\nRun completed with %d warning(s) and %d skipped request(s).\n", r.Warnings, r.Skipped)
+		fmt.Fprintf(w, "\n%s\n", st.yellow(fmt.Sprintf("Run completed with %d warning(s) and %d skipped request(s).", r.Warnings, r.Skipped)))
 	} else {
-		fmt.Fprintln(w, "\nNo failures.")
+		fmt.Fprintf(w, "\n%s\n", st.green("No failures."))
 	}
 }
 
-func writeFailureRecap(w io.Writer, r *Report) {
+func writeFailureRecap(w io.Writer, r *Report, st styles) {
 	printedHeader := false
 	for _, item := range r.Items {
 		var failedTests []TestResult
@@ -215,95 +284,96 @@ func writeFailureRecap(w io.Writer, r *Report) {
 			continue
 		}
 		if !printedHeader {
-			fmt.Fprintln(w, "\nFailures:")
+			fmt.Fprintf(w, "\n%s\n", st.boldRed("Failures:"))
 			printedHeader = true
 		}
-		path := item.Name
+		path := itemDisplayName(item)
 		if item.Folder != "" {
-			path = strings.ReplaceAll(item.Folder, "/", " › ") + " › " + item.Name
+			path = strings.ReplaceAll(item.Folder, "/", " › ") + " › " + path
 		}
-		status := ""
-		if item.Code != 0 {
-			status = fmt.Sprintf(" %d", item.Code)
-		}
-		fmt.Fprintf(w, "  ✗ %s%s [%s]\n", path, status, item.Method)
+		fmt.Fprintf(w, "  %s %s%s [%s]\n", st.red("✗"), st.red(path), st.statusCode(item.Code), st.dim(item.Method))
 		if item.Error != "" {
-			fmt.Fprintf(w, "      error: %s\n", item.Error)
+			fmt.Fprintf(w, "      %s %s\n", st.red("error:"), st.red(item.Error))
 		}
 		for _, test := range failedTests {
-			fmt.Fprintf(w, "      ✗ %s\n", test.Name)
+			fmt.Fprintf(w, "      %s %s\n", st.red("✗"), st.red(test.Name))
 			for _, line := range strings.Split(test.Error, "\n") {
 				if line != "" {
-					fmt.Fprintf(w, "        %s\n", line)
+					fmt.Fprintf(w, "        %s\n", st.red(line))
 				}
 			}
 		}
 	}
 }
 
-func writeItem(w io.Writer, item ItemReport, verbose, bodies bool) {
-	symbol := "✓"
+func itemDisplayName(item ItemReport) string {
+	if item.DisplayName != "" {
+		return item.DisplayName
+	}
+	return item.Name
+}
+
+func writeItem(w io.Writer, item ItemReport, verbose, bodies bool, st styles) {
+	symbol := st.green("✓")
 	if item.Skipped {
-		symbol = "↷"
+		symbol = st.yellow("↷")
 	} else if item.Failed {
-		symbol = "✗"
+		symbol = st.red("✗")
 	} else if len(item.Warnings) > 0 {
-		symbol = "⚠"
+		symbol = st.yellow("⚠")
 	}
-	status := ""
-	if item.Code != 0 {
-		status = fmt.Sprintf(" %d", item.Code)
-	}
-	fmt.Fprintf(w, "  %s %s%s [%s · %s]\n", symbol, item.Name, status, item.Method, humanMilliseconds(item.DurationMS))
+	fmt.Fprintf(w, "  %s %s%s [%s · %s]\n", symbol, st.bold(itemDisplayName(item)), st.statusCode(item.Code), st.cyan(item.Method), st.dim(humanMilliseconds(item.DurationMS)))
 	if item.Error != "" {
-		fmt.Fprintf(w, "      ✗ %s\n", item.Error)
+		fmt.Fprintf(w, "      %s %s\n", st.red("✗"), st.red(item.Error))
 	}
 	for _, warning := range item.Warnings {
-		fmt.Fprintf(w, "      ⚠ %s\n", warning)
+		fmt.Fprintf(w, "      %s %s\n", st.yellow("⚠"), st.yellow(warning))
 	}
 	for _, t := range item.Tests {
 		if !verbose && t.Passed {
 			continue
 		}
-		symbol := "✓"
+		symbol := st.green("✓")
+		name := t.Name
 		if !t.Passed {
-			symbol = "✗"
+			symbol = st.red("✗")
+			name = st.red(name)
 		}
-		fmt.Fprintf(w, "      %s %s\n", symbol, t.Name)
+		fmt.Fprintf(w, "      %s %s\n", symbol, name)
 		if !t.Passed && t.Error != "" {
 			for _, line := range strings.Split(t.Error, "\n") {
-				fmt.Fprintf(w, "        %s\n", line)
+				fmt.Fprintf(w, "        %s\n", st.red(line))
 			}
 		}
 	}
 	if verbose || item.Failed || len(item.Warnings) > 0 {
 		for _, line := range item.Console {
-			fmt.Fprintf(w, "      console: %s\n", line)
+			fmt.Fprintf(w, "      %s %s\n", st.dim("console:"), st.dim(line))
 		}
 	}
 	if bodies {
-		writeBodies(w, item)
+		writeBodies(w, item, st)
 	}
 }
 
-func writeBodies(w io.Writer, item ItemReport) {
-	fmt.Fprintf(w, "      Request: %s %s\n", item.Method, item.URL)
-	writeHeaderBlock(w, item.RequestHeaders)
+func writeBodies(w io.Writer, item ItemReport, st styles) {
+	fmt.Fprintf(w, "      %s %s %s\n", st.bold("Request:"), st.cyan(item.Method), item.URL)
+	writeHeaderBlock(w, item.RequestHeaders, st)
 	if item.RequestBody != "" {
-		fmt.Fprintln(w, "      Request body:")
+		fmt.Fprintf(w, "      %s\n", st.bold("Request body:"))
 		writeIndentedBody(w, item.RequestBody)
 	}
 	if item.Code != 0 {
-		fmt.Fprintf(w, "      Response: %s\n", item.Status)
-		writeHeaderBlock(w, item.ResponseHeaders)
+		fmt.Fprintf(w, "      %s %s\n", st.bold("Response:"), st.bold(item.Status))
+		writeHeaderBlock(w, item.ResponseHeaders, st)
 		if item.ResponseBody != "" {
-			fmt.Fprintln(w, "      Response body:")
+			fmt.Fprintf(w, "      %s\n", st.bold("Response body:"))
 			writeIndentedBody(w, item.ResponseBody)
 		}
 	}
 }
 
-func writeHeaderBlock(w io.Writer, headers map[string][]string) {
+func writeHeaderBlock(w io.Writer, headers map[string][]string, st styles) {
 	if len(headers) == 0 {
 		return
 	}
@@ -312,10 +382,10 @@ func writeHeaderBlock(w io.Writer, headers map[string][]string) {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	fmt.Fprintln(w, "      Headers:")
+	fmt.Fprintf(w, "      %s\n", st.bold("Headers:"))
 	for _, k := range keys {
 		for _, v := range headers[k] {
-			fmt.Fprintf(w, "        %s: %s\n", k, v)
+			fmt.Fprintf(w, "        %s: %s\n", st.cyan(k), v)
 		}
 	}
 }
@@ -326,7 +396,7 @@ func writeIndentedBody(w io.Writer, body string) {
 	}
 }
 
-func writeReportTable(w io.Writer, rows [][3]string) {
+func writeReportTable(w io.Writer, rows [][3]string, st styles) {
 	headers := [3]string{"", "executed", "failed"}
 	w1, w2, w3 := len(headers[0]), len(headers[1]), len(headers[2])
 	for _, row := range rows {
@@ -340,19 +410,36 @@ func writeReportTable(w io.Writer, rows [][3]string) {
 			w3 = len(row[2])
 		}
 	}
-	line := func(a, b, c string) {
-		fmt.Fprintf(w, "│ %-*s │ %-*s │ %-*s │\n", w1, a, w2, b, w3, c)
+	cell := func(text string, width int) string {
+		return text + strings.Repeat(" ", width-len(text))
+	}
+	paint := func(fn func(string) string, text string) string {
+		if fn == nil {
+			return text
+		}
+		return fn(text)
+	}
+	line := func(a, b, c string, sa, sb, sc func(string) string) {
+		fmt.Fprintf(w, "%s %s %s %s %s %s %s\n",
+			st.dim("│"), paint(sa, cell(a, w1)),
+			st.dim("│"), paint(sb, cell(b, w2)),
+			st.dim("│"), paint(sc, cell(c, w3)),
+			st.dim("│"))
 	}
 	border := "┌" + strings.Repeat("─", w1+2) + "┬" + strings.Repeat("─", w2+2) + "┬" + strings.Repeat("─", w3+2) + "┐"
 	middle := "├" + strings.Repeat("─", w1+2) + "┼" + strings.Repeat("─", w2+2) + "┼" + strings.Repeat("─", w3+2) + "┤"
 	bottom := "└" + strings.Repeat("─", w1+2) + "┴" + strings.Repeat("─", w2+2) + "┴" + strings.Repeat("─", w3+2) + "┘"
-	fmt.Fprintln(w, border)
-	line(headers[0], headers[1], headers[2])
-	fmt.Fprintln(w, middle)
+	fmt.Fprintln(w, st.dim(border))
+	line(headers[0], headers[1], headers[2], st.bold, st.bold, st.bold)
+	fmt.Fprintln(w, st.dim(middle))
 	for _, row := range rows {
-		line(row[0], row[1], row[2])
+		var failedStyle func(string) string
+		if row[2] != "" && row[2] != "0" {
+			failedStyle = st.red
+		}
+		line(row[0], row[1], row[2], st.bold, nil, failedStyle)
 	}
-	fmt.Fprintln(w, bottom)
+	fmt.Fprintln(w, st.dim(bottom))
 }
 
 func humanDuration(ms int64) string {
@@ -450,23 +537,24 @@ func (r *Report) WriteJUnit(w io.Writer) error {
 			suiteMS += item.DurationMS
 			duration := seconds(item.DurationMS)
 			classname := name
+			displayName := itemDisplayName(item)
 			switch {
 			case item.Skipped:
 				suite.Cases = append(suite.Cases, junitTestCase{
-					Name: item.Name, Classname: classname, Time: duration,
+					Name: displayName, Classname: classname, Time: duration,
 					Skipped: &junitSkipped{Message: "skipped"},
 				})
 				suite.Tests++
 			case item.Error != "":
 				suite.Cases = append(suite.Cases, junitTestCase{
-					Name: item.Name, Classname: classname, Time: duration,
+					Name: displayName, Classname: classname, Time: duration,
 					Error: &junitFailure{Message: item.Error, Body: item.Error},
 				})
 				suite.Tests++
 				suite.Errors++
 			case len(item.Tests) > 0:
 				for _, t := range item.Tests {
-					tc := junitTestCase{Name: item.Name + " :: " + t.Name, Classname: classname, Time: duration}
+					tc := junitTestCase{Name: displayName + " :: " + t.Name, Classname: classname, Time: duration}
 					suite.Tests++
 					if !t.Passed {
 						tc.Failure = &junitFailure{Message: t.Error, Body: t.Error}
@@ -475,7 +563,7 @@ func (r *Report) WriteJUnit(w io.Writer) error {
 					suite.Cases = append(suite.Cases, tc)
 				}
 			default:
-				suite.Cases = append(suite.Cases, junitTestCase{Name: item.Name, Classname: classname, Time: duration})
+				suite.Cases = append(suite.Cases, junitTestCase{Name: displayName, Classname: classname, Time: duration})
 				suite.Tests++
 			}
 		}

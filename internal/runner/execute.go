@@ -12,16 +12,17 @@ import (
 )
 
 type planItem struct {
-	Name       string
-	ID         string
-	Path       []string
-	Request    *Request
-	Auth       json.RawMessage
-	FolderVars map[string]string
-	FolderIDs  []string
-	PreEvents  []Event
-	TestEvents []Event
-	Settings   map[string]any
+	Name        string
+	DisplayName string
+	ID          string
+	Path        []string
+	Request     *Request
+	Auth        json.RawMessage
+	FolderVars  map[string]string
+	FolderIDs   []string
+	PreEvents   []Event
+	TestEvents  []Event
+	Settings    map[string]any
 }
 
 // Runner is an offline collection runner.
@@ -148,7 +149,50 @@ func buildPlan(c *Collection) []*planItem {
 		}
 	}
 	walk(c.Item, nil, nil, map[string]string{}, nil, nil, c.Auth, c.ProtocolProfileBehavior)
+	assignDisplayNames(out)
 	return out
+}
+
+// assignDisplayNames disambiguates requests that share a name within the same
+// folder. Every request in a duplicate group gets an "(occurrence/total)"
+// suffix, which keeps reports stable across iterations while making it clear
+// exactly which request ran.
+func assignDisplayNames(plan []*planItem) {
+	type nameKey struct {
+		folder string
+		name   string
+	}
+	keyFor := func(item *planItem) nameKey {
+		folder := ""
+		if len(item.Path) > 1 {
+			folder = strings.Join(item.Path[:len(item.Path)-1], "/")
+		}
+		return nameKey{folder: folder, name: item.Name}
+	}
+	counts := make(map[nameKey]int, len(plan))
+	for _, item := range plan {
+		counts[keyFor(item)]++
+	}
+	seen := make(map[nameKey]int, len(counts))
+	for _, item := range plan {
+		key := keyFor(item)
+		if counts[key] == 1 {
+			item.DisplayName = item.Name
+			continue
+		}
+		seen[key]++
+		item.DisplayName = fmt.Sprintf("%s (%d/%d)", item.Name, seen[key], counts[key])
+	}
+}
+
+func planItemPath(item *planItem, name string) string {
+	if len(item.Path) == 0 {
+		return name
+	}
+	parts := make([]string, 0, len(item.Path))
+	parts = append(parts, item.Path[:len(item.Path)-1]...)
+	parts = append(parts, name)
+	return strings.Join(parts, "/")
 }
 
 func splitEvents(events []Event) (pre, test []Event) {
@@ -207,9 +251,20 @@ func buildLookup(plan []*planItem) map[string]int {
 		if _, ok := lookup[item.Name]; !ok {
 			lookup[item.Name] = idx
 		}
-		joined := strings.Join(item.Path, "/")
+		if item.DisplayName != "" {
+			if _, ok := lookup[item.DisplayName]; !ok {
+				lookup[item.DisplayName] = idx
+			}
+		}
+		joined := planItemPath(item, item.Name)
 		if _, ok := lookup[joined]; !ok {
 			lookup[joined] = idx
+		}
+		if item.DisplayName != "" {
+			displayJoined := planItemPath(item, item.DisplayName)
+			if _, ok := lookup[displayJoined]; !ok {
+				lookup[displayJoined] = idx
+			}
 		}
 	}
 	return lookup
@@ -248,8 +303,13 @@ func selectPlan(plan []*planItem, opts Options) ([]*planItem, error) {
 		if len(opts.Requests) > 0 {
 			ok := false
 			full := strings.Join(item.Path, "/")
+			displayFull := full
+			if item.DisplayName != "" {
+				displayFull = planItemPath(item, item.DisplayName)
+			}
 			for _, want := range opts.Requests {
-				if want == item.Name || want == full {
+				if want == item.Name || want == full ||
+					(item.DisplayName != "" && (want == item.DisplayName || want == displayFull)) {
 					ok = true
 					break
 				}
@@ -305,13 +365,16 @@ func resolveSelector(plan []*planItem, folders []folderRef, selector string) ([]
 	if request >= 0 {
 		// Prefer an exact request path.
 		for i, item := range plan {
-			if strings.Join(item.Path, "/") == selector || item.ID == selector {
+			displayMatch := item.DisplayName != "" &&
+				(item.DisplayName == selector || planItemPath(item, item.DisplayName) == selector)
+			if planItemPath(item, item.Name) == selector || item.ID == selector || displayMatch {
 				return []int{i}, nil
 			}
 		}
 	}
 	for i, item := range plan {
-		if item.Name == selector || item.ID == selector {
+		if item.Name == selector || item.ID == selector ||
+			(item.DisplayName != "" && item.DisplayName == selector) {
 			return []int{i}, nil
 		}
 	}
@@ -399,9 +462,13 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			itemStart := time.Now()
 			ir := ItemReport{
 				Iteration: iteration + 1,
+				ID:        item.ID,
 				Name:      item.Name,
 				Folder:    strings.Join(item.Path[:len(item.Path)-1], "/"),
 				Method:    strings.ToUpper(item.Request.Method),
+			}
+			if item.DisplayName != "" && item.DisplayName != item.Name {
+				ir.DisplayName = item.DisplayName
 			}
 			view := &View{
 				Globals:     r.globals,
