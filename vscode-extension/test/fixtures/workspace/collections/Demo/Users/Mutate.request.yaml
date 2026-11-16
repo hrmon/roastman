@@ -1,0 +1,13 @@
+$kind: http-request
+name: Mutate
+url: "{{base_url}}/mutate"
+method: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("Environment mutations", function () {
+        pm.environment.set("token", "new-token");
+        pm.environment.unset("stale");
+      });
+    language: text/javascript
+order: 5000

@@ -1,0 +1,121 @@
+{
+  "name": "roastman-vscode",
+  "displayName": "Roastman Request Runner",
+  "description": "Run Postman v3 (native Git) request files with a selected environment and see the response and test results.",
+  "version": "0.2.0",
+  "publisher": "roastman",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hrmon/roastman.git"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "postman",
+    "api",
+    "http",
+    "request",
+    "runner",
+    "rest"
+  ],
+  "activationEvents": [
+    "onLanguage:yaml"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "roastman.runRequest",
+        "title": "Run Request",
+        "category": "Roastman",
+        "icon": "$(play)"
+      },
+      {
+        "command": "roastman.selectEnvironment",
+        "title": "Select Environment",
+        "category": "Roastman",
+        "icon": "$(layers)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "roastman.runRequest",
+          "when": "resourceFilename =~ /\\.request\\.ya?ml$/",
+          "group": "navigation@10"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "roastman.runRequest",
+          "when": "resourceFilename =~ /\\.request\\.ya?ml$/",
+          "group": "navigation@10"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "roastman.runRequest",
+          "when": "editorLangId == yaml"
+        },
+        {
+          "command": "roastman.selectEnvironment",
+          "when": "true"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "roastman.runRequest",
+        "key": "ctrl+alt+r",
+        "mac": "cmd+alt+r",
+        "when": "editorLangId == yaml && resourceFilename =~ /\\.request\\.ya?ml$/"
+      }
+    ],
+    "configuration": {
+      "title": "Roastman",
+      "properties": {
+        "roastman.executablePath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "markdownDescription": "Path to the `roastman` executable. Leave empty to use a `roastman` binary at the workspace root, then `roastman` from `PATH`."
+        },
+        "roastman.requestTimeoutSeconds": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "maximum": 3600,
+          "description": "Per-request timeout in seconds passed to roastman."
+        },
+        "roastman.updateEnvironmentFile": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "After a request runs, write environment changes made by scripts back to the selected environment file. Existing fields, comments, and unchanged values are preserved; the file is only rewritten when values actually changed."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run bundle",
+    "compile": "tsc -p .",
+    "bundle": "esbuild src/extension.ts --bundle --platform=node --format=cjs --target=node18 --external:vscode --outfile=dist/extension.js",
+    "watch": "tsc -watch -p .",
+    "test": "npm run compile && npm run bundle && node --test test/environment.test.js test/nativeGit.test.js test/report.test.js test/webview.test.js test/run.test.js test/extension.test.js",
+    "package": "npm run bundle && vsce package --no-dependencies -o roastman-vscode.vsix"
+  },
+  "dependencies": {
+    "yaml": "^2.5.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.2.1",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.2"
+  }
+}
