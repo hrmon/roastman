@@ -170,7 +170,7 @@ func runCollection(args []string) error {
 	reportBodies := fs.Bool("report-bodies", false, "include request/response headers and bodies in the report")
 	verbose := fs.Bool("verbose", false, "print every request and console output")
 	quiet := fs.Bool("quiet", false, "only print failures and the summary")
-	reportFormat := fs.String("report", "cli", "report format: cli, json, or junit")
+	reportFormat := fs.String("report", "cli", "report format: cli, json, junit, or html")
 	exportEnvironment := fs.String("export-environment", "", "write the final environment to this file")
 	exportGlobals := fs.String("export-globals", "", "write the final globals to this file")
 	output := fs.String("o", "", "write the report to a file")
@@ -204,9 +204,9 @@ func runCollection(args []string) error {
 		return errors.New("expected exactly one collection path")
 	}
 	switch strings.ToLower(*reportFormat) {
-	case "cli", "json", "junit":
+	case "cli", "json", "junit", "html":
 	default:
-		return fmt.Errorf("unknown report format %q (use cli, json, or junit)", *reportFormat)
+		return fmt.Errorf("unknown report format %q (use cli, json, junit, or html)", *reportFormat)
 	}
 	var printer *runner.CLIPrinter
 	liveCLI := strings.EqualFold(*reportFormat, "cli") && *output == "" && !*quiet
@@ -268,6 +268,8 @@ func runCollection(args []string) error {
 			err = report.WriteJSON(f)
 		case "junit":
 			err = report.WriteJUnit(f)
+		case "html":
+			err = report.WriteHTML(f)
 		default:
 			report.WriteCLI(f, *verbose, true, *reportBodies)
 		}
@@ -280,6 +282,8 @@ func runCollection(args []string) error {
 			err = report.WriteJSON(os.Stdout)
 		case "junit":
 			err = report.WriteJUnit(os.Stdout)
+		case "html":
+			err = report.WriteHTML(os.Stdout)
 		default:
 			if liveCLI && printer != nil {
 				printer.Summary(report)

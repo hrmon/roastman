@@ -131,7 +131,7 @@ Common flags:
     --bail                       Stop at the first failure/error
     --insecure                   Skip TLS certificate verification
     --no-scripts                 Execute requests without JavaScript
-    --report cli|json|junit      Report format
+    --report cli|json|junit|html Report format
     --report-bodies              Include request/response headers and bodies
 -o, --output FILE                Write the report to a file
     --verbose                    Print every request and console log
@@ -153,13 +153,31 @@ per-request stream. `--report-bodies` additionally includes the final request
 and response headers and bodies for every request (it also enables full
 per-request output). Bodies can contain secrets, so use it deliberately.
 
+`--report html` writes a single self-contained HTML document with inline CSS and
+JavaScript, so it works offline and can be archived as a CI artifact or shared
+as one file:
+
+```sh
+roastman run ./example-collection --report html -o report.html
+```
+
+Open `report.html` in any browser. The report shows the run summary, a failure
+recap, and per-folder request details including test results, console output,
+and (with `--report-bodies`) request/response headers and bodies. It includes
+client-side search and All/Failed/Passed/Warnings/Skipped filters, plus
+expand/collapse controls and a light/dark theme toggle. No external
+stylesheets, scripts, or fonts are loaded. When `-o` is omitted, the HTML is
+written to stdout like the JSON and JUnit reports, but a file is usually more
+convenient.
+
 Unresolved variables are warnings, not errors. If a URL still contains
 `{{variable}}` after pre-request scripts, that request is skipped with a warning.
 Unresolved variables in headers or bodies produce warnings but the request is
 still sent. Warnings don't affect the process exit code.
 
 Exit code is `0` when all requests and tests pass and nonzero when a test,
-request, or runner error occurs. JSON and JUnit reports are suitable for CI.
+request, or runner error occurs. JSON, JUnit, and HTML reports are suitable for
+CI.
 
 Environment/globals mutations made by scripts stay in memory during the run.
 Use `--export-environment` / `--export-globals` to write their final state as
@@ -197,6 +215,25 @@ This is the deliberate trade-off for a single binary with no Node dependency.
 Core request auth in the runner: inherit, noauth, bearer, basic, API key and
 offline OAuth2 access tokens. OAuth flows that fetch tokens, OAuth1, AWS
 signature v4, digest and NTLM are not implemented yet.
+
+## VS Code extension
+
+[vscode-extension/](vscode-extension/README.md) contains a small VS Code
+extension that runs the Postman native Git request file you have open, with a
+selected environment, and shows the response and test results in a panel. It
+uses the `roastman` binary (from the workspace root or `PATH`) and is focused on
+single-request runs. Environment changes made by scripts can optionally be
+written back to the selected environment file (`roastman.updateEnvironmentFile`,
+off by default).
+
+```sh
+cd vscode-extension
+npm install
+npm run package
+code --install-extension roastman-vscode.vsix
+```
+
+See the [extension README](vscode-extension/README.md) for usage and settings.
 
 ## What is preserved
 
